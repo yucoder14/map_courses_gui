@@ -18,22 +18,24 @@ def create_secret_file(username, password):
         os.chmod(filename, 0o600)
     except IOError as e: 
         print("Error: ", e)
+        os.remove(f"/home/{username}/.credential")
         exit(1)
     except Exception as e:
         print("Error: ", e)
+        os.remove(f"/home/{username}/.credential")
         exit(69)
 
 def mount_course(username): 
     remote_path = "//courses.ads.carleton.edu/courses"
     local_path = f"/home/{username}/COURSES"
     get_uid = subprocess.run(["id", "-u", username], capture_output=True, text=True) 
-    uid = get_uid.stdout
+    uid = int(get_uid.stdout)
 
     os.makedirs(local_path, exist_ok=True)
 
     command = [ 
-        "sudo", "/sbin/mount.cifs", remote_path, local_path,
-        "-o", f"username=/home/{username}/.credentials,uid={uid},gid={uid},vers=2.0"
+        "/sbin/mount.cifs", remote_path, local_path,
+        "-o", f"credentials=/home/{username}/.credential,uid={uid},gid={uid},vers=2.0"
     ]
 
     subprocess.run(command)
@@ -53,7 +55,7 @@ def validate_login():
         if conn.result['description'] == "success":
             create_secret_file(userid, password)
             mount_course(userid) 
-            os.remove(f"/home/{userid}/.credential")
+            os.remove(f"/home/{username}/.credential")
             messagebox.showinfo("Login Successful", f"Welcome, {userid}!")
             exit(0)
         else:
