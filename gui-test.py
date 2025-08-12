@@ -1,23 +1,59 @@
+#! /usr/bin/python3 
 import tkinter as tk
 from tkinter import messagebox
 
 from ldap3 import ALL, Connection, Server
 from ldap3.core.exceptions import LDAPException 
 
+import os 
+import subprocess
+
+def create_secret_file(username, password): 
+    filename = f"/home/{username}/.credential"
+    try: 
+        with open(filename, 'w') as file:
+            file.write(f"username={username}\n")
+            file.write(f"password={password}\n")
+
+        os.chmod(filename, 0o600)
+    except IOError as e: 
+        print("Error: ", e)
+        exit(1)
+    except Exception as e:
+        print("Error: ", e)
+        exit(69)
+
+def mount_course(username): 
+    remote_path = "//courses.ads.carleton.edu/courses"
+    local_path = f"/home/{username}/COURSES"
+    get_uid = subprocess.run(["id", "-u", username], capture_output=True, text=True) 
+    uid = get_uid.stdout
+
+    os.makedirs(local_path, exist_ok=True)
+
+    command = [ 
+        "sudo", "/sbin/mount.cifs", remote_path, local_path,
+        "-o", f"username=/home/{username}/.credentials,uid={uid},gid={uid},vers=2.0"
+    ]
+
+    subprocess.run(command)
+    
+
 def validate_login():
     userid = username_entry.get()
     password = password_entry.get()
-    print(userid)
    
-    server = Server("ldaps://ldap.its.carleton.edu")
+    server = Server("ldaps://ldap.its.carleton.edu", get_info=ALL)
     base_dn = "ou=People,dc=carleton,dc=edu"
     user_dn = f"carlNetId={userid},{base_dn}"
-    print(user_dn)
-    # You can add your own validation logic here
+    
     try: 
-        conn = Connection( server, user=user_dn, password=password)
-        print(conn.result)
-        if conn.result == "success":
+        conn = Connection(server, user=user_dn, password=password)
+        conn.bind()
+        if conn.result['description'] == "success":
+            create_secret_file(userid, password)
+            mount_course(userid) 
+            os.remove(f"/home/{userid}/.credential")
             messagebox.showinfo("Login Successful", f"Welcome, {userid}!")
             exit(0)
         else:
