@@ -1,4 +1,7 @@
 #! /usr/bin/python3 
+
+# need to add following line to /etc/sudoers
+# %users ALL=(ALL) NOPASSWD: /path/to/gui-test.py
 import tkinter as tk
 from tkinter import messagebox
 
@@ -8,41 +11,36 @@ from ldap3.core.exceptions import LDAPException
 import os 
 import subprocess
 
-def create_secret_file(username, password): 
-    filename = f"/home/{username}/.credential"
-    try: 
-        with open(filename, 'w') as file:
-            file.write(f"username={username}\n")
-            file.write(f"password={password}\n")
+import re
 
-        os.chmod(filename, 0o600)
-    except IOError as e: 
-        print("Error: ", e)
-        os.remove(f"/home/{username}/.credential")
-        exit(1)
-    except Exception as e:
-        print("Error: ", e)
-        os.remove(f"/home/{username}/.credential")
-        exit(69)
-
-def mount_course(username): 
+def mount_course(username, password): 
     remote_path = "//courses.ads.carleton.edu/courses"
     local_path = f"/home/{username}/COURSES"
-    get_uid = subprocess.run(["id", "-u", username], capture_output=True, text=True) 
+    get_uid = subprocess.run(["id", "-u", username], capture_output=True, text=True, check=True) 
     uid = int(get_uid.stdout)
 
     os.makedirs(local_path, exist_ok=True)
 
+    # Create a copy of current environment and add the password
+    mount_env = os.environ.copy() 
+    mount_env["PASSWD"] = password
+
     command = [ 
         "/sbin/mount.cifs", remote_path, local_path,
-        "-o", f"credentials=/home/{username}/.credential,uid={uid},gid={uid},vers=2.0"
+        "-o", f"username={username},uid={uid},gid={uid},vers=2.0"
     ]
 
-    subprocess.run(command)
+    # Run the command with the custom environment
+    subprocess.run(command, env=mount_env, check=True)
     
 
 def validate_login():
     userid = username_entry.get()
+
+    if not re.match(r'^[a-zA-Z0-9]+$', userid): 
+        messagebox.showerror("Invalid Input", "Username contains illegal characters") 
+        return 
+
     password = password_entry.get()
    
     server = Server("ldaps://ldap.its.carleton.edu", get_info=ALL)
@@ -52,12 +50,17 @@ def validate_login():
     try: 
         conn = Connection(server, user=user_dn, password=password)
         conn.bind()
+        # verify user is Carleton user using ldap
         if conn.result['description'] == "success":
-            create_secret_file(userid, password)
-            mount_course(userid) 
-            os.remove(f"/home/{username}/.credential")
-            messagebox.showinfo("Login Successful", f"Welcome, {userid}!")
-            exit(0)
+            try: 
+                mount_course(userid, password) 
+                messagebox.showinfo("Login Successful", f"Welcome, {userid}!")
+                exit(0)
+            except subprocess.CalledProcessError:
+                messagebox.showerror("Mount Failed!", "Could not mount COURSES") 
+                exit(69)
+            except Exception as e: 
+                messagebox.showerror("Error", f"An unexpected error occurred: {e}")
         else:
             messagebox.showerror("Login Failed", "Invalid username or password")
     except LDAPException: 
