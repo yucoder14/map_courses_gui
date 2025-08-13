@@ -75,6 +75,7 @@ def validate_login():
         # verify user is Carleton user using ldap
         if conn.result['description'] == "success":
             try: 
+                conn.unbind()
                 mount_course(userid, password) 
                 create_link(userid)
                 messagebox.showinfo("Login Successful", f"Welcome, {userid}!")
@@ -119,6 +120,7 @@ form_box = tk.Frame(content)
 # Image 
 image = base64_to_image(base64_image_string) 
 tk_image = ImageTk.PhotoImage(image)
+root.iconphoto(True, tk_image)
 image_label = tk.Label(image_box, image=tk_image)
 
 # Username entry field
